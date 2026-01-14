@@ -1,65 +1,40 @@
 Momentum-Shield-15
 Momentum Shield 15 is a rules-based equity momentum strategy that ranks stocks using 6M, 3M, and 1M returns, applies trend and momentum filters, and builds an equal-weight portfolio of up to 15 stocks. Risk is managed through monthly rebalancing and a daily 15% trailing stop-loss.
 
-🚀 Strategy Mechanics
-1. Selection & Ranking
-Universe: Liquid stocks defined in universe.txt.
+**🚀 Strategy Mechanics**
 
-Ranking Logic: Composite momentum score calculated as:
+**A. Selection & Ranking**
+1. Universe: Liquid stocks defined in universe.txt.
+2. Ranking Logic: Composite momentum score calculated as:
+2.1 40% Weight: 6-Month Returns (126 trading days)
+2.2 40% Weight: 3-Month Returns (63 trading days)
+2.3 20% Weight: 1-Month Returns (21 trading days)
 
-40% Weight: 6-Month Returns (126 trading days)
-
-40% Weight: 3-Month Returns (63 trading days)
-
-20% Weight: 1-Month Returns (21 trading days)
-
-2. Entry Filters (The Gatekeepers)
+**B. Entry Filters (The Gatekeepers)**
 A stock is eligible for entry only if it meets all three criteria:
+1. Trend Filter: Current Price must be above the 100-day Simple Moving Average (SMA).
+2. Momentum Filter: 1-Month Return must be greater than -5% (to avoid "falling knives").
+3. Timing: Fresh entries occur strictly on the 1st trading day of each month.
 
-Trend Filter: Current Price must be above the 100-day Simple Moving Average (SMA).
+**C. Exit Rules**
+1. Trailing Stop Loss: 15% below the highest price achieved since entry. This is checked daily, and exits happen immediately mid-month if hit.
+2. Monthly Rebalance: During the monthly review (1st trading day), any stock that has fallen out of the Top 25 ranks is sold to make room for stronger candidates.
 
-Momentum Filter: 1-Month Return must be greater than -5% (to avoid "falling knives").
-
-Timing: Fresh entries occur strictly on the 1st trading day of each month.
-
-3. Exit Rules
-Trailing Stop Loss: 15% below the highest price achieved since entry. This is checked daily, and exits happen immediately mid-month if hit.
-
-Monthly Rebalance: During the monthly review (1st trading day), any stock that has fallen out of the Top 25 ranks is sold to make room for stronger candidates.
-
-📊 Performance Metrics
+**📊 Performance Metrics**
 The dashboard provides 15 key metrics for deep strategy analysis:
+1. Capital Stats: Ending Capital, Total Return %, and Nifty Benchmark Return.
+2. Trade Stats: Total Trades Taken, Winning Trades, and Accuracy (Win %).
+3. Efficiency: Average Gain, Average Loss and Gain/Loss Ratio.
+4. Extreme Returns: Max Gain, Max Loss and Profit Factor.
+5. Risk: Max Gain/Loss (₹), Max Drawdown (₹), Days to Recover, and Sortino Ratio.
 
-Capital Stats: Ending Capital, Total Return %, and Nifty Benchmark Return.
+**📁 Project Structure**
+1. app.py: The Streamlit dashboard. Features a Live Scanner, Order Generator (with Sl No numbering), and Backtest Analytics.
+2. incremental_backtest.py: The engine that runs simulations. It strictly appends data only for the last day of a completed month to ensure data integrity.
+3. universe.txt: A simple text file containing the list of stock tickers (Yahoo Finance format).
+4. momentum_backtest.db: SQLite database storing all trade history and portfolio state.
 
-Trade Stats: Total Trades Taken, Winning Trades, and Accuracy (Win %).
-
-Efficiency: Average Gain, Average Loss, Gain/Loss Ratio, and Profit Factor.
-
-Risk: Max Gain/Loss (₹), Max Drawdown (₹), Days to Recover, and Sortino Ratio.
-
-📁 Project Structure
-app.py: The Streamlit dashboard. Features a Live Scanner, Order Generator (with Sl No numbering), and Backtest Analytics.
-
-incremental_backtest.py: The engine that runs simulations. It strictly appends data only for the last day of a completed month to ensure data integrity.
-
-universe.txt: A simple text file containing the list of stock tickers (Yahoo Finance format).
-
-momentum_backtest.db: SQLite database storing all trade history and portfolio state.
-
-🛠️ Installation & Usage
-Install Dependencies:
-
-Bash
-
-pip install streamlit pandas yfinance plotly
-Update Database: Run the backtest engine to process the latest completed months:
-
-Bash
-
-python incremental_backtest.py
-Launch Dashboard:
-
-Bash
-
-streamlit run app.py
+**🛠️ Installation & Usage**
+1. Install Dependencies: pip install streamlit pandas yfinance plotly
+2. Update Database: Run the backtest engine to process the latest completed months(or run the incremental_bactest.py file every day on automation): python incremental_backtest.py
+3. Launch Dashboard: streamlit run app.py

@@ -3,9 +3,9 @@ Momentum Shield 15 is a rules-based equity momentum strategy that ranks stocks u
 
 🚀 Strategy Mechanics
 1. Selection & Ranking
-Universe: Defined in universe.txt.
+Universe: Liquid stocks defined in universe.txt.
 
-Ranking Logic: Composite momentum score based on:
+Ranking Logic: Composite momentum score calculated as:
 
 40% Weight: 6-Month Returns (126 trading days)
 
@@ -13,34 +13,53 @@ Ranking Logic: Composite momentum score based on:
 
 20% Weight: 1-Month Returns (21 trading days)
 
-2. Entry Filters
-Trend Filter: Price must be above the 100-day Simple Moving Average (SMA).
+2. Entry Filters (The Gatekeepers)
+A stock is eligible for entry only if it meets all three criteria:
 
-Momentum Filter: 1-Month Return must be greater than -5%.
+Trend Filter: Current Price must be above the 100-day Simple Moving Average (SMA).
 
-Timing: Fresh entries occur strictly on the 1st trading day of the month.
+Momentum Filter: 1-Month Return must be greater than -5% (to avoid "falling knives").
+
+Timing: Fresh entries occur strictly on the 1st trading day of each month.
 
 3. Exit Rules
-Trailing Stop Loss: 15% below the highest price since entry (checked daily).
+Trailing Stop Loss: 15% below the highest price achieved since entry. This is checked daily, and exits happen immediately mid-month if hit.
 
-Monthly Rebalance: Sell any stock that falls out of the Top 25 ranks.
+Monthly Rebalance: During the monthly review (1st trading day), any stock that has fallen out of the Top 25 ranks is sold to make room for stronger candidates.
+
+📊 Performance Metrics
+The dashboard provides 15 key metrics for deep strategy analysis:
+
+Capital Stats: Ending Capital, Total Return %, and Nifty Benchmark Return.
+
+Trade Stats: Total Trades Taken, Winning Trades, and Accuracy (Win %).
+
+Efficiency: Average Gain, Average Loss, Gain/Loss Ratio, and Profit Factor.
+
+Risk: Max Gain/Loss (₹), Max Drawdown (₹), Days to Recover, and Sortino Ratio.
 
 📁 Project Structure
-app.py: The Streamlit dashboard for live scanning and backtest visualization.
+app.py: The Streamlit dashboard. Features a Live Scanner, Order Generator (with Sl No numbering), and Backtest Analytics.
 
-incremental_backtest.py: The engine that runs simulations and updates the database.
+incremental_backtest.py: The engine that runs simulations. It strictly appends data only for the last day of a completed month to ensure data integrity.
 
-universe.txt: List of stocks to be scanned.
+universe.txt: A simple text file containing the list of stock tickers (Yahoo Finance format).
 
-momentum_backtest.db: SQLite database storing trade history.
+momentum_backtest.db: SQLite database storing all trade history and portfolio state.
 
-📊 Key Metrics Tracked
-The dashboard provides a comprehensive performance summary including:
+🛠️ Installation & Usage
+Install Dependencies:
 
-Capital Stats: Ending Capital, Return %, and Nifty Benchmark Return.
+Bash
 
-Trade Stats: Total Trades, Winning Trades, and Accuracy.
+pip install streamlit pandas yfinance plotly
+Update Database: Run the backtest engine to process the latest completed months:
 
-Efficiency: Avg Gain/Loss, Gain/Loss Ratio, and Profit Factor.
+Bash
 
-Risk Metrics: Max Drawdown (₹), Days to Recover, and Sortino Ratio.
+python incremental_backtest.py
+Launch Dashboard:
+
+Bash
+
+streamlit run app.py

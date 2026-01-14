@@ -8,12 +8,22 @@ import numpy as np
 from datetime import datetime, timedelta
 import os
 
+
 # ==========================================
-# 1. CONFIGURATION & LOADING
+# 1. CONFIGURATION & BRANDING
 # ==========================================
-st.set_page_config(page_title="Momentum Strategy Pro", layout="wide", page_icon="📈")
+
 DB_NAME = "momentum_backtest.db"
-ORIGINAL_BACKTEST_CAPITAL = 1000000  # Base capital used in DB generation (₹10L)
+ORIGINAL_BACKTEST_CAPITAL = 1000000  # Base capital (₹10L)
+TRAILING_SL_PCT = 0.15 # 15% Strategy SL
+
+# These lines MUST come before the 'if page ==' logic
+st.set_page_config(page_title="Momentum Shield 15", layout="wide")
+st.sidebar.title("🛡️ Momentum Shield 15")
+st.sidebar.markdown(f"### *Shreesha S*")
+st.sidebar.markdown("---")
+page = st.sidebar.radio("Navigate", ["Current Portfolio", "Backtest Analytics"])
+st.sidebar.markdown("---")
 
 # --- Helper: Indian Currency Formatting ---
 def format_indian(n):
@@ -202,137 +212,130 @@ def is_first_trading_day():
     return datetime.today().day <= 5
 
 # ==========================================
-# PAGE LOGIC
+# PAGE 1: CURRENT PORTFOLIO
 # ==========================================
-st.sidebar.title("🚀 Momentum Pro")
-st.sidebar.markdown("---")
-page = st.sidebar.radio("Navigate", ["Live Scanner", "Backtest Analytics"])
-st.sidebar.markdown("---")
-
-# ==========================================
-# PAGE 1: LIVE SCANNER
-# ==========================================
-if page == "Live Scanner":
-    st.title("⚡ Live Market Scanner")
+if page == "Current Portfolio":
+    st.header("📊 Current Portfolio")
     
-    if not UNIVERSE_TICKERS:
-        st.error("❌ Universe not loaded. Check 'universe.txt'.")
-    else:
-        if not is_first_trading_day():
-            st.warning("⚠️ **Strategy Note:** Only enter/rebalance on the **1st trading day**.")
-        else:
-            st.success("✅ **Rebalance Window Open**")
-
-        if st.button("🔄 Scan Market Now"):
-            run_scanner.clear()
-            
-        top_picks, latest_prices, streaks, starts, entry_prices = run_scanner()
+    # Database Loading
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        df_holdings = pd.read_sql("SELECT * FROM state_holdings", conn)
+        df_meta = pd.read_sql("SELECT * FROM state_meta", conn)
+        conn.close()
         
-        if top_picks is not None:
-            st.subheader("Top 15 Picks (Current Momentum)")
+        # Robust Date Logic for Sub-heading
+        if not df_meta.empty:
+            date_col = [c for c in df_meta.columns if 'date' in c.lower() or 'rebalance' in c.lower()][0]
+            last_reb_raw = pd.to_datetime(df_meta[date_col].iloc[0]).replace(tzinfo=None)
+            reb_display_date = last_reb_raw.replace(day=1)
+            sub_head_date = reb_display_date.strftime('%d-%b-%Y')
+        else:
+            reb_display_date = pd.Timestamp.now().replace(day=1, hour=0, minute=0, second=0)
+            sub_head_date = reb_display_date.strftime('%d-%b-%Y')
             
-            display_data = []
-            for ticker, score in top_picks.items():
-                curr_price = latest_prices[ticker]
-                ent_price = entry_prices.get(ticker, 0)
-                
-                # Return Calculation
-                if ent_price > 0:
-                    ret_pct = ((curr_price - ent_price) / ent_price) * 100
-                else:
-                    ret_pct = 0.0
-                
-                display_data.append({
-                    "Stock": ticker,
-                    "Score": score, 
-                    "Active From": starts.get(ticker, "-"),
-                    "Entry Price": ent_price,
-                    "Current Price": curr_price,
-                    "% Return": ret_pct, 
-                    "Days Active": streaks.get(ticker, 0)
-                })
-            
-            df_display = pd.DataFrame(display_data)
-            
-            # --- COLOR FORMATTING ---
-            if not df_display.empty:
-                max_val = max(abs(df_display['% Return'].min()), abs(df_display['% Return'].max()))
-                if max_val == 0: max_val = 1 
-            else:
-                max_val = 1
+    except Exception as e:
+        st.error(f"Error: {e}")
+        sub_head_date = "N/A"
+        reb_display_date = pd.Timestamp.now().replace(day=1)
 
-            st.dataframe(
-                df_display.style
-                .format({
-                    "Score": "{:.2%}", 
-                    "Entry Price": "₹{:.2f}",
-                    "Current Price": "₹{:.2f}",
-                    "% Return": "{:.2f}%"
-                })
-                .background_gradient(subset=['% Return'], cmap="RdYlGn", vmin=-max_val, vmax=max_val), 
-                use_container_width=True, 
-                hide_index=True
-            )
-            
-            st.markdown("---")
-            st.subheader("🛒 Order Generator")
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                capital = st.number_input("Capital to Deploy (₹)", min_value=10000, value=100000, step=10000)
-            
-            if capital > 0:
-                orders = []
-                total_deployed = 0
-                for ticker in top_picks.index:
-                    p = latest_prices[ticker]
-                    if p > 0:
-                        qty = int((capital/15)/p)
-                        val = qty * p
-                        orders.append({"Stock": ticker, "Qty": qty, "Value": val})
-                        total_deployed += val
-                
-                rem = capital - total_deployed
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total Capital", format_indian(capital))
-                c2.metric("Deployed", format_indian(total_deployed))
-                c3.metric("Remaining", format_indian(rem))
-                
-                # --- FIX: Order Generator Table ---
-                df_ord = pd.DataFrame(orders)
-                if not df_ord.empty:
-                    df_ord.index = range(1, len(df_ord) + 1)
-                    df_ord.index.name = "Sl No"
-                    st.table(df_ord.style.format({"Value": format_indian}))
+    st.subheader(f"Rebalanced on {sub_head_date}") 
+    st.warning("⚠️ **Strategy Note:** Only enter/rebalance on the **1st trading day**.")
 
-    st.markdown("---")
-    st.subheader("🛡️ Trailing SL Checker")
-    c1, c2, c3 = st.columns([2, 2, 1])
-    with c1: check_ticker = st.text_input("Stock Symbol", "VEDL").upper()
-    with c2: check_date = st.date_input("Entry Date")
-    with c3: 
-        st.write("") 
-        st.write("") 
-        do_check = st.button("Check Status")
+    if not df_holdings.empty:
+        portfolio_list = []
+        tickers = df_holdings['ticker'].tolist()
+        live_data = yf.download(tickers, period="5d", progress=False)['Close']
 
-    if do_check and check_ticker:
-        try:
-            if not check_ticker.endswith(".NS"): check_ticker += ".NS"
-            hist = yf.download(check_ticker, start=check_date, progress=False)['Close']
-            if not hist.empty:
-                peak = hist.max().item()
-                curr = hist.iloc[-1].item()
-                drop = (curr - peak) / peak
-                sl_price = peak * 0.85
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Peak", f"₹{peak:.1f}")
-                m2.metric("Current", f"₹{curr:.1f}")
-                m3.metric("Drawdown", f"{drop:.1%}")
-                st.write(f"**Stop Loss:** ₹{sl_price:.2f}")
-                if drop < -0.15: st.error("🛑 SL HIT! SELL.")
-                elif drop < -0.10: st.warning("⚠️ WARNING.")
-                else: st.success("✅ SAFE.")
-            else: st.error("No Data.")
-        except Exception as e: st.error(f"Error: {e}")
+        for _, row in df_holdings.iterrows():
+            ticker = row['ticker']
+            price_at_reb = row['entry_price'] 
+            high_price = row['high_price']
+            
+            try:
+                ltp = live_data[ticker].iloc[-1]
+            except:
+                ltp = high_price
+            
+            # Fetch Trend Start Date (Avoids 1970/ancient dates)
+            conn = sqlite3.connect(DB_NAME)
+            query = f"""
+                SELECT entry_date, entry_price 
+                FROM trades 
+                WHERE ticker='{ticker}' 
+                AND entry_date <= '{reb_display_date.strftime('%Y-%m-%d')}' 
+                AND (exit_date IS NULL OR exit_date >= '{reb_display_date.strftime('%Y-%m-%d')}')
+                ORDER BY entry_date ASC LIMIT 1
+            """
+            original_data = pd.read_sql(query, conn)
+            conn.close()
+            
+            orig_date = pd.to_datetime(original_data['entry_date'].iloc[0]) if not original_data.empty else pd.to_datetime(row['entry_date'])
+            orig_price = original_data['entry_price'].iloc[0] if not original_data.empty else price_at_reb
+
+            days_active = (pd.Timestamp.now() - orig_date).days
+            trailing_sl = high_price * (1 - TRAILING_SL_PCT)
+            fall_from_high = ((ltp - high_price) / high_price) * 100
+            dist_from_sl = ((ltp - trailing_sl) / ltp) * 100
+            status = "🟢 LIVE" if ltp >= trailing_sl else "🔴 STOPPED OUT"
+            
+            portfolio_list.append({
+                "Stock Name": ticker,
+                "Original Entry Date": orig_date.strftime('%Y-%m-%d'),
+                "Days Active": days_active,
+                "Original Entry Price": orig_price,
+                "Price at Rebalance": price_at_reb,
+                "LTP": ltp,
+                "High Price": high_price,
+                "Fall from High (%)": fall_from_high,
+                "Trailing SL": trailing_sl,
+                "Dist. from SL (%)": dist_from_sl,
+                "Status": status
+            })
+        
+        df_p = pd.DataFrame(portfolio_list)
+        
+        # --- THE FIX: use_container_width=True makes it fit the page width ---
+        st.dataframe(
+            df_p.style.format({
+                "Original Entry Price": "₹{:.2f}",
+                "Price at Rebalance": "₹{:.2f}",
+                "LTP": "₹{:.2f}",
+                "High Price": "₹{:.2f}",
+                "Fall from High (%)": "{:.2f}%",
+                "Trailing SL": "₹{:.2f}",
+                "Dist. from SL (%)": "{:.2f}%"
+            })
+            .background_gradient(subset=['Dist. from SL (%)'], cmap="RdYlGn", vmin=0, vmax=15)
+            .background_gradient(subset=['Fall from High (%)'], cmap="RdYlGn", vmin=-15, vmax=0),
+            use_container_width=True, # THIS REMOVES THE HORIZONTAL SCROLL
+            hide_index=True
+        )
+
+        # 3. Order Generator Summary (Calculates Remaining Cash)
+        st.divider()
+        st.subheader("🛒 Order Generator")
+        col_cap, _ = st.columns([1, 2])
+        with col_cap:
+            port_capital = st.number_input("Capital to Deploy (₹)", value=100000, step=10000, key="port_cap_final")
+        
+        if port_capital > 0:
+            alloc = port_capital / 15
+            order_data = []
+            total_deployed = 0
+            for i, row in df_p.iterrows():
+                qty = int(alloc / row['LTP']) if row['LTP'] > 0 else 0
+                val = qty * row['LTP']
+                total_deployed += val
+                order_data.append({"Sl No": i+1, "Stock": row['Stock Name'], "Quantity": qty, "Est. Value": val})
+            
+            # Metrics Display
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total Capital", format_indian(port_capital))
+            m2.metric("Deployed", format_indian(total_deployed))
+            m3.metric("Remaining Cash", format_indian(port_capital - total_deployed))
+            
+            st.table(pd.DataFrame(order_data).style.format({"Est. Value": "₹{:,.0f}"}))
 
 # ==========================================
 # PAGE 2: BACKTEST ANALYTICS (ADVANCED)

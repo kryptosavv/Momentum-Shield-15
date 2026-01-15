@@ -20,21 +20,8 @@ A stock is eligible for entry only if it meets all three criteria:
 1. Trailing Stop Loss: 15% below the highest price achieved since entry. This is checked daily, and exits happen immediately mid-month if hit.
 2. Monthly Rebalance: During the monthly review (1st trading day), any stock that has fallen out of the Top 25 ranks is sold to make room for stronger candidates.
 
-**📊 Performance Metrics**
-The dashboard provides 15 key metrics for deep strategy analysis:
-1. Capital Stats: Ending Capital, Total Return %, and Nifty Benchmark Return.
-2. Trade Stats: Total Trades Taken, Winning Trades, and Accuracy (Win %).
-3. Efficiency: Average Gain, Average Loss and Gain/Loss Ratio.
-4. Extreme Returns: Max Gain, Max Loss and Profit Factor.
-5. Risk: Max Gain/Loss (₹), Max Drawdown (₹), Days to Recover, and Sortino Ratio.
-
 **📁 Project Structure**
 1. app.py: The Streamlit dashboard. Features a Live Scanner, Order Generator (with Sl No numbering), and Backtest Analytics.
-2. incremental_backtest.py: The engine that runs simulations. It strictly appends data only for the last day of a completed month to ensure data integrity.
+2. moshi15_engine.py: The engine that runs simulations. It strictly appends data only for the last day of a completed month to ensure data integrity.
 3. universe.txt: A simple text file containing the list of stock tickers (Yahoo Finance format).
-4. momentum_backtest.db: SQLite database storing all trade history and portfolio state.
-
-**🛠️ Installation & Usage**
-1. Install Dependencies: pip install streamlit pandas yfinance plotly
-2. Update Database: Run the backtest engine to process the latest completed months(or run the incremental_bactest.py file every day on automation): python incremental_backtest.py
-3. Launch Dashboard: streamlit run app.py
+4. moshi15_backtest-live.db: SQLite database storing all trade history and portfolio state.

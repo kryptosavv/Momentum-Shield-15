@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 import os
 import warnings
+import time  # Added for retry logic
 
 # --- 1. CLEANUP: Suppress Warnings ---
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -48,19 +49,19 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS trades (
-                 slno INTEGER PRIMARY KEY AUTOINCREMENT,
-                 trade_month TEXT, ticker TEXT, original_entry_date TEXT,
-                 months_in_momentum INTEGER, latest_entry_date TEXT,
-                 latest_entry_price REAL, qty INTEGER, exit_date TEXT,
-                 exit_price REAL, pnl_abs REAL, pnl_pct REAL,
-                 exit_reason TEXT, holding_days INTEGER)''')
+                  slno INTEGER PRIMARY KEY AUTOINCREMENT,
+                  trade_month TEXT, ticker TEXT, original_entry_date TEXT,
+                  months_in_momentum INTEGER, latest_entry_date TEXT,
+                  latest_entry_price REAL, qty INTEGER, exit_date TEXT,
+                  exit_price REAL, pnl_abs REAL, pnl_pct REAL,
+                  exit_reason TEXT, holding_days INTEGER)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS state_meta (
-                 id INTEGER PRIMARY KEY, last_run_date TEXT, current_cash REAL)''')
+                  id INTEGER PRIMARY KEY, last_run_date TEXT, current_cash REAL)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS state_holdings (
-                 ticker TEXT PRIMARY KEY, qty INTEGER, entry_price REAL, 
-                 entry_date TEXT, high_price REAL, orig_entry_date TEXT, months_active INTEGER)''')
+                  ticker TEXT PRIMARY KEY, qty INTEGER, entry_price REAL, 
+                  entry_date TEXT, high_price REAL, orig_entry_date TEXT, months_active INTEGER)''')
     conn.commit()
     return conn
 
@@ -74,7 +75,7 @@ def load_state(conn):
         c.execute("SELECT * FROM state_holdings")
         rows = c.fetchall()
         holdings = {r[0]: {'qty': r[1], 'entry_price': r[2], 'entry_date': datetime.strptime(r[3], '%Y-%m-%d'), 
-                           'high_price': r[4], 'orig_entry_date': r[5], 'months_active': r[6]} for r in rows}
+                            'high_price': r[4], 'orig_entry_date': r[5], 'months_active': r[6]} for r in rows}
         return last_date, cash, holdings
     return None, INITIAL_CAPITAL, {}
 
@@ -143,7 +144,6 @@ def calculate_stats(conn):
     print("-" * 65)
     print(f"{'Starting Capital':<20} | ₹{INITIAL_CAPITAL:,.0f}")
     print(f"{'Ending Capital':<20} | ₹{current_capital:,.0f}")
-    # --- ADDED TOTAL TRADES ROW HERE ---
     print(f"{'Total Trades':<20} | {len(df_trades):<18} | {'-':<15}")
     print(f"{'Overall Return':<20} | {strat_total_ret:>17.2f}% | {nifty_total_ret:>13.2f}%")
     print(f"{'CAGR':<20} | {strat_cagr:>17.2f}% | {nifty_cagr:>13.2f}%")
@@ -170,7 +170,20 @@ if last_run_date_str and datetime.strptime(last_run_date_str, '%Y-%m-%d').date()
 fetch_start_date = (datetime.strptime(last_run_date_str or START_DATE_DEFAULT, '%Y-%m-%d') - timedelta(days=400)).strftime('%Y-%m-%d')
 
 print(f"⏳ Fetching data for {len(TICKERS)} stocks...")
-data = yf.download(TICKERS + [BENCHMARK], start=fetch_start_date, end=cutoff_date + timedelta(days=1), progress=False, group_by='ticker', auto_adjust=True)
+
+# --- ADDED: Robust Download with Retries ---
+def robust_download(tickers, start_date, end_date, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            data = yf.download(tickers, start=start_date, end=end_date, progress=False, group_by='ticker', auto_adjust=True)
+            if not data.empty:
+                return data
+        except Exception as e:
+            print(f"⚠️ Attempt {attempt+1} failed: {e}")
+        time.sleep(5)
+    return pd.DataFrame()
+
+data = robust_download(TICKERS + [BENCHMARK], fetch_start_date, cutoff_date + timedelta(days=1))
 
 # --- REPORT MISSING TICKERS ---
 frame_list = []
@@ -200,10 +213,17 @@ if missing_tickers:
     print("-" * 65)
 
 if not frame_list:
-    print("❌ Critical Error: No data downloaded. Check internet or tickers.")
-    exit()
+    print("❌ Critical Error: No data downloaded. Signal failure to GitHub Actions.")
+    exit(1)
 
 stock_data = pd.concat(frame_list, axis=1).ffill()
+
+# --- ADDED: Data Integrity Check ---
+# If more than 50% of the required data points are missing, abort to prevent corrupting the database.
+if stock_data.isnull().values.sum() > (len(stock_data) * len(TICKERS) * 0.5):
+    print("🚨 Critical Alert: Over 50% of downloaded data is missing. Aborting to protect state.")
+    exit(1)
+
 stock_data = stock_data.drop(columns=[BENCHMARK], errors='ignore')
 
 # Indicators

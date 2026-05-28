@@ -87,8 +87,7 @@ st.title("🛡️ Momentum Shield 15 🛡️")
 st.caption("BY SHREESHA S")
 
 # --- TABS FOR NAVIGATION ---
-# UPDATED: Renamed 3rd tab to "Stress Test Simulator"
-tab_portfolio, tab_analytics, tab_sim = st.tabs(["Current Portfolio", "Backtest Analytics", "Stress Test Simulator"])
+tab_portfolio, tab_analytics = st.tabs(["Current Portfolio", "Backtest Analytics"])
 
 # --- Helper: Indian Currency Formatting ---
 def format_indian(n):
@@ -108,6 +107,23 @@ def format_indian(n):
             res = s + "," + res
         return "₹" + ("-" if is_negative else "") + res
     except: return "₹0"
+
+# --- Helper: TradingView Watchlist Generator ---
+def copy_tv(data):
+    if not data: return
+    unique_tickers = []
+    for x in data:
+        # Catch both "Stock Name" (Live Tab) and "ticker" (Backtest Tab)
+        ticker = x.get('Stock Name', x.get('ticker', ''))
+        if ticker:
+            # Strip out .NS or .ns before appending
+            clean_ticker = str(ticker).replace('.NS', '').replace('.ns', '')
+            unique_tickers.append(f"NSE:{clean_ticker}")
+            
+    unique_tickers = list(dict.fromkeys(unique_tickers))
+    batches = [", ".join(unique_tickers[i:i+30]) for i in range(0, len(unique_tickers), 30)]
+    st.markdown("### 📋 TradingView Watchlist")
+    for b in batches: st.code(b, language="text")
 
 # --- A. Load Universe from Master File ---
 def load_universe():
@@ -313,36 +329,11 @@ with tab_portfolio:
             )
         else:
             st.success("✅ All Trades are LIVE (No Stop Losses Hit)")
+            
+        # --- GENERATE TRADINGVIEW WATCHLIST FOR LIVE TRADES ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        copy_tv(df_p.to_dict('records'))
 
-        st.divider()
-        st.subheader("🛒 Order Generator")
-        col_cap, _ = st.columns([1, 2])
-        with col_cap:
-            port_capital = st.number_input("Capital to Deploy (₹)", value=100000, step=10000, key="port_cap_final")
-        
-        if port_capital > 0:
-            alloc = port_capital / 15
-            order_data = []
-            total_deployed = 0
-            for i, row in df_p.iterrows():
-                qty = int(alloc / row['LTP']) if row['LTP'] > 0 else 0
-                val = qty * row['LTP']
-                total_deployed += val
-                order_data.append({
-                    "Stock": row['Stock Name'], 
-                    "Rebal. Price": row['Rebal. Price'], 
-                    "Quantity": qty, 
-                    "Buy Value": val
-                })
-            
-            df_orders = pd.DataFrame(order_data)
-            # Sort DESCENDING (Largest first)
-            df_orders = df_orders.sort_values(by="Quantity", ascending=False).reset_index(drop=True)
-            
-            # --- FINAL COLUMN SELECTION (NO SL NO) ---
-            df_orders = df_orders[["Stock", "Rebal. Price", "Quantity", "Buy Value"]]
-            
-            st.table(df_orders.style.format({"Buy Value": "₹{:,.0f}", "Rebal. Price": "₹{:.2f}"}))
     else:
         st.info("No active holdings found. Ensure the automated backtest has run successfully.")
 
@@ -378,7 +369,7 @@ with tab_analytics:
             min_year = trades_df['entry_date'].min().year
             max_year = today.year
             years = list(range(min_year, max_year + 1))
-            c_y, c_m = st.columns(2) # Changed to st.columns for body layout
+            c_y, c_m = st.columns(2) 
             with c_y:
                 sel_year = st.selectbox("Year", years, index=len(years)-1)
             with c_m:
@@ -632,6 +623,10 @@ with tab_analytics:
                 .background_gradient(subset=['PnL'], cmap='RdYlGn', vmin=-max_pnl_scale, vmax=max_pnl_scale),
                 use_container_width=True
             )
+            
+            # --- GENERATE TRADINGVIEW WATCHLIST FOR PERIOD LOG ---
+            st.markdown("<br>", unsafe_allow_html=True)
+            copy_tv(period_df.to_dict('records'))
 
         st.markdown("---")
         with st.expander("📂 View Full History (All Trades)"):
@@ -649,254 +644,7 @@ with tab_analytics:
                 .background_gradient(subset=['PnL'], cmap='RdYlGn', vmin=-max_full_scale, vmax=max_full_scale),
                 use_container_width=True
             )
-
-# ==========================================
-# TAB 3: STRESS TEST SIMULATOR (FIXED & FULL)
-# ==========================================
-with tab_sim:
-    # --- UPDATED: Changed from st.title to st.header to match style ---
-    st.header("📉 Stress Test Simulator")
-    trades_df, _ = get_db_data()
-    
-    if trades_df is None or trades_df.empty: st.error("Data missing.")
-    else:
-        # 1. Build Daily Equity Series (Base)
-        start_dt = trades_df['entry_date'].min()
-        end_dt = datetime.today()
-        dates = pd.date_range(start_dt, end_dt)
-        
-        daily_pnl = trades_df.groupby('exit_date')['pnl_abs'].sum().reindex(dates).fillna(0)
-        base_cap = ORIGINAL_BACKTEST_CAPITAL
-        equity_curve = base_cap + daily_pnl.cumsum()
-        
-        # 2. Get Nifty Benchmark & ALIGN
-        nifty_raw = fetch_nifty_data_final()
-        
-        # --- FIX 1: STRICT ALIGNMENT ---
-        common_idx = equity_curve.index.intersection(nifty_raw.index)
-        
-        if not common_idx.empty:
-            strat_aligned = equity_curve.loc[common_idx]
-            nifty_aligned = nifty_raw.loc[common_idx]['Nifty 50']
-            # Normalize Nifty to Strategy Capital
-            nifty_aligned = (nifty_aligned / nifty_aligned.iloc[0]) * base_cap
-        else:
-            st.error("Error aligning Strategy and Nifty dates.")
-            st.stop()
-
-        # --- PART 1: ROLLING RETURNS ---
-        st.subheader("a. Rolling Returns Analysis")
-        
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            # Added "1 Month" to options
-            roll_window = st.selectbox("Select Rolling Window", 
-                ["1 Month", "2 Months", "3 Months", "6 Months", "9 Months", "1 Year", "2 Years", "3 Years"], index=5, key="roll_win_sel")
             
-            w_map = {
-                "1 Month": 21, "2 Months": 42, "3 Months": 63, "6 Months": 126, 
-                "9 Months": 189, "1 Year": 252, "2 Years": 504, "3 Years": 756
-            }
-            days = w_map[roll_window]
-            st.markdown("---")
-            sim_date = st.date_input("📅 Simulate Entry Date", value=datetime(2023, 1, 1), min_value=start_dt, max_value=end_dt, key="sim_dt_in")
-
-        # Calculate Rolling Returns on ALIGNED data
-        strat_roll = strat_aligned.pct_change(days) * 100
-        nifty_roll = nifty_aligned.pct_change(days) * 100
-        
-        with c2:
-            fig_roll = go.Figure()
-            fig_roll.add_trace(go.Scatter(x=strat_roll.index, y=strat_roll, mode='lines', name=f'Strategy {roll_window}', line=dict(color='#FFD700')))
-            fig_roll.add_trace(go.Scatter(x=nifty_roll.index, y=nifty_roll, mode='lines', name=f'Nifty {roll_window}', line=dict(color='#0078FF', width=1)))
-            
-            # Add marker for selected date
-            try:
-                idx_loc = strat_roll.index.get_indexer([pd.Timestamp(sim_date)], method='nearest')[0]
-                if idx_loc >= 0:
-                    val_at_date = strat_roll.iloc[idx_loc]
-                    date_at_loc = strat_roll.index[idx_loc]
-                    fig_roll.add_trace(go.Scatter(
-                        x=[date_at_loc], y=[val_at_date],
-                        mode='markers', marker=dict(color='red', size=10),
-                        name=f"Entry: {sim_date.strftime('%d-%b-%y')}"
-                    ))
-            except: pass
-
-            fig_roll.update_layout(title=f"Rolling {roll_window} Returns", xaxis_title="Date", yaxis_title="Return (%)", height=400)
-            st.plotly_chart(fig_roll, use_container_width=True, key=f"roll_chart_{roll_window}")
-
-        try:
-            target_date = pd.Timestamp(sim_date) + timedelta(days=days * 1.45)
-            # Use searchsorted/get_indexer logic for robustness
-            res_idx = strat_aligned.index.get_indexer([target_date], method='nearest')[0]
-            start_idx = strat_aligned.index.get_indexer([pd.Timestamp(sim_date)], method='nearest')[0]
-            
-            start_val = strat_aligned.iloc[start_idx]
-            end_val = strat_aligned.iloc[res_idx]
-            actual_ret = ((end_val - start_val) / start_val) * 100
-            
-            # Nifty Comparison Logic
-            n_start = nifty_aligned.iloc[start_idx]
-            n_end = nifty_aligned.iloc[res_idx]
-            nifty_sim_ret = ((n_end - n_start) / n_start) * 100
-            
-            msg = f"If you invested on **{sim_date.strftime('%d-%b-%Y')}**, your {roll_window} return would be **{actual_ret:.2f}%** vs Nifty50 return of **{nifty_sim_ret:.2f}%**."
-            
-            if actual_ret >= nifty_sim_ret:
-                st.success(f"✅ {msg}")
-            else:
-                st.error(f"📉 {msg}")
-                
-        except: st.warning("Not enough future data.")
-
-        st.markdown("---")
-
-        # --- PART 2: BEST AND WORST ROLLING RETURNS (UPDATED) ---
-        st.subheader("b. Best and Worst Rolling Returns")
-        
-        # New Filters (Keys added to prevent dup ID)
-        c_f1, c_f2 = st.columns(2)
-        with c_f1:
-            alpha_type = st.radio("Select Performance Type", ["Positive Alpha (Outperformance)", "Negative Alpha (Underperformance)"], horizontal=True, key="alpha_radio")
-        with c_f2:
-            # --- UPDATED: Added 6 Months ---
-            period_sel = st.selectbox("Select Rolling Period", ["6 Months", "1 Year", "2 Years", "3 Years"], key="period_radio")
-
-        # --- UPDATED: Map includes 6M ---
-        p_map = {"6 Months": 6, "1 Year": 12, "2 Years": 24, "3 Years": 36}
-        months = p_map[period_sel]
-
-        # 1. Resample to Month Start (One entry per month)
-        s_m = strat_aligned.resample('MS').first()
-        n_m = nifty_aligned.resample('MS').first()
-
-        # 2. Calculate Rolling Returns
-        df_res = pd.DataFrame({
-            'Strategy': s_m.pct_change(months) * 100,
-            'Nifty': n_m.pct_change(months) * 100
-        }).dropna()
-
-        df_res['Alpha'] = df_res['Strategy'] - df_res['Nifty']
-        # --- UPDATED: Explicit Start & End Dates ---
-        df_res['End Date'] = df_res.index
-        df_res['Start Date'] = df_res.index - pd.DateOffset(months=months)
-
-        # 3. Filter
-        if "Positive" in alpha_type:
-            df_filt = df_res[df_res['Alpha'] > 0].sort_values(by='Alpha', ascending=False)
-            color_map = 'Greens'
-        else:
-            df_filt = df_res[df_res['Alpha'] < 0].sort_values(by='Alpha', ascending=True) # Most negative first
-            # --- UPDATED: Correct Gradient (Red for Worst) ---
-            color_map = 'YlOrRd_r'
-
-        # 4. Display (No Limit)
-        if not df_filt.empty:
-            df_display = df_filt.reset_index(drop=True)
-            df_display.insert(0, "Sl No", df_display.index + 1)
-            # Reorder columns
-            df_display = df_display[['Sl No', 'Start Date', 'End Date', 'Strategy', 'Nifty', 'Alpha']]
-            
-            st.dataframe(
-                df_display.style.format({
-                    'Strategy': '{:.2f}%', 'Nifty': '{:.2f}%', 'Alpha': '{:.2f}%', 
-                    'Start Date': '{:%d-%b-%Y}', 'End Date': '{:%d-%b-%Y}'
-                })
-                .background_gradient(subset=['Alpha'], cmap=color_map),
-                use_container_width=True, hide_index=True
-            )
-        else:
-            st.info("No data found for selected criteria.")
-
-        st.markdown("---")
-
-        # --- PART 3: SIGNIFICANT DRAWDOWN SIMULATOR (FIXED) ---
-        st.subheader("c. Significant DD Simulator (DD > 5%)")
-        
-        peak = strat_aligned.cummax()
-        dd_series = (strat_aligned - peak) / peak
-        
-        is_dd = dd_series < 0
-        dd_id = (is_dd != is_dd.shift()).cumsum()
-        dd_groups = dd_series[is_dd].groupby(dd_id)
-        
-        dd_stats = []
-        for _, group in dd_groups:
-            if group.empty: continue
-            start_d = group.index[0]
-            end_d = group.index[-1]
-            depth = group.min()
-            bottom_date = group.idxmin()
-            duration = (end_d - start_d).days
-            
-            # Recovery relative to start date peak
-            if strat_aligned.loc[end_d] >= peak.loc[start_d]:
-                rec_status = "Recovered"
-            else:
-                rec_status = "Not Recovered"
-            
-            if depth < -0.05: 
-                dd_stats.append({
-                    "Start Date": start_d, 
-                    "Bottom Date": bottom_date, 
-                    "Recovery Date": end_d,
-                    "Recovery Status": rec_status,
-                    "Depth (%)": depth * 100, 
-                    "Days to Recover": duration
-                })
-        
-        if dd_stats:
-            df_dd = pd.DataFrame(dd_stats).sort_values("Depth (%)", ascending=True)
-            top_dds = df_dd.reset_index(drop=True)
-            top_dds.insert(0, "Sl No", top_dds.index + 1)
-            
-            # Dropdown Presets
-            presets = top_dds.head(10)
-            presets['Label'] = presets.apply(lambda x: f"{x['Start Date'].strftime('%b-%Y')} (Depth: {x['Depth (%)']:.2f}%)", axis=1)
-            
-            c_sel, c_chart = st.columns([1, 3])
-            with c_sel:
-                st.markdown("##### Select Stress Period")
-                if not presets.empty:
-                    sel_dd_idx = st.selectbox("Choose a historical crash:", presets.index, format_func=lambda x: presets.loc[x, 'Label'], key="dd_select")
-                    sel_row = presets.loc[sel_dd_idx]
-                    
-                    st.error(f"📉 Max Depth: **{sel_row['Depth (%)']:.2f}%**")
-                    st.warning(f"⏳ Days Under: **{sel_row['Days to Recover']} days**")
-                    st.success(f"✅ Recovered By: **{sel_row['Recovery Date'].strftime('%d-%b-%Y')}**")
-                else:
-                    st.info("No major crashes to simulate.")
-
-            with c_chart:
-                if not presets.empty:
-                    zoom_start = sel_row['Start Date'] - timedelta(days=30)
-                    zoom_end = sel_row['Recovery Date'] + timedelta(days=60)
-                    
-                    # --- FIX 2: SLICING BY DATE (Prevents IndexError) ---
-                    # Using the ALIGNED series, so indices match perfectly.
-                    z_strat = strat_aligned.loc[zoom_start:zoom_end]
-                    z_nifty = nifty_aligned.loc[zoom_start:zoom_end]
-                    
-                    if not z_strat.empty:
-                        # Rebase to 100
-                        base_z = z_strat.iloc[0]
-                        z_strat_plot = (z_strat / base_z) * 100
-                        
-                        fig_z = go.Figure()
-                        fig_z.add_trace(go.Scatter(x=z_strat_plot.index, y=z_strat_plot, mode='lines', name='Strategy', line=dict(color='#FF4B4B', width=3)))
-                        
-                        if not z_nifty.empty:
-                            base_n = z_nifty.iloc[0]
-                            z_nifty_plot = (z_nifty / base_n) * 100
-                            fig_z.add_trace(go.Scatter(x=z_nifty_plot.index, y=z_nifty_plot, mode='lines', name='Nifty', line=dict(color='#0078FF', dash='dot')))
-                        
-                        fig_z.update_layout(title=f"Stress Test: {sel_row['Label']}", xaxis_title="Date", yaxis_title="Rebased Value (100)", hovermode="x unified")
-                        st.plotly_chart(fig_z, use_container_width=True, key="dd_chart")
-            
-            st.markdown("##### 📋 Log of All Drawdowns > 5%")
-            st.table(top_dds[['Sl No', 'Start Date', 'Bottom Date', 'Recovery Date', 'Depth (%)', 'Days to Recover']].style.format({
-                'Depth (%)': '{:.2f}%', 'Start Date': '{:%d-%b-%Y}', 'Bottom Date': '{:%d-%b-%Y}', 'Recovery Date': '{:%d-%b-%Y}'
-            }))
-        else:
-            st.success("No significant drawdowns (>5%) detected in history.")
+            # --- GENERATE TRADINGVIEW WATCHLIST FOR FULL LOG ---
+            st.markdown("<br>", unsafe_allow_html=True)
+            copy_tv(full_df.to_dict('records'))

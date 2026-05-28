@@ -84,7 +84,7 @@ st.markdown("""
 
 # --- HEADER (Replaces Sidebar) ---
 st.title("🛡️ Momentum Shield 15 🛡️")
-st.caption("BY SHREESHA S")
+st.caption("A Framework For Systematic Momentum Investing")
 
 # --- TABS FOR NAVIGATION ---
 tab_portfolio, tab_analytics = st.tabs(["Current Portfolio", "Backtest Analytics"])

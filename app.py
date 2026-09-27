@@ -45,7 +45,42 @@ st.markdown("""
         font-size: 1.2rem;
         letter-spacing: 2px;
         color: #aaa;
-        padding-bottom: 2rem;
+        padding-bottom: 0.6rem;
+    }
+
+    /* Research Reference Badge */
+    .research-badge-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 0rem;
+        margin-bottom: 1.8rem;
+    }
+
+    .research-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 22px;
+        border-radius: 30px;
+        background: rgba(218, 165, 32, 0.08);
+        border: 1px solid rgba(218, 165, 32, 0.5);
+        color: #DAA520 !important;
+        text-decoration: none !important;
+        font-family: 'Helvetica Neue', sans-serif;
+        font-size: 0.95rem;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+        transition: all 0.25s ease-in-out;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .research-badge:hover {
+        background: rgba(218, 165, 32, 0.22);
+        border-color: #DAA520;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(218, 165, 32, 0.35);
+        color: #FFD700 !important;
     }
 
     /* 2. Tabs: Bigger and Centered */
@@ -85,6 +120,20 @@ st.markdown("""
 # --- HEADER (Replaces Sidebar) ---
 st.title("🛡️ Momentum Shield 15 🛡️")
 st.caption("A Framework For Systematic Momentum Investing")
+
+# --- RESEARCH REFERENCE BADGE ---
+st.markdown("""
+    <div class="research-badge-container">
+        <a href="https://www.aqr.com/-/media/AQR/Documents/Journal-Articles/JPM-Fact-Fiction-and-Momentum-Investing.pdf" 
+           target="_blank" 
+           rel="noopener noreferrer" 
+           class="research-badge">
+            <span>📄</span>
+            <span>Research Paper: <strong>Fact, Fiction, and Momentum Investing (AQR)</strong></span>
+            <span style="font-size: 0.85rem; opacity: 0.85;">↗</span>
+        </a>
+    </div>
+""", unsafe_allow_html=True)
 
 # --- TABS FOR NAVIGATION ---
 tab_portfolio, tab_analytics = st.tabs(["Current Portfolio", "Backtest Analytics"])
